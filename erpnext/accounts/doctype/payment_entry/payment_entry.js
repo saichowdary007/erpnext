@@ -41,6 +41,19 @@ frappe.ui.form.on("Payment Entry", {
 
 		if (frm.is_new()) {
 			set_default_party_type(frm);
+			
+			// Set party from context when creating from Supplier/Customer dashboard
+			const route_options = frappe.route_options;
+			if (route_options) {
+				if (route_options.party_type) {
+					frm.set_value("party_type", route_options.party_type);
+				}
+				if (route_options.party) {
+					frm.set_value("party", route_options.party);
+				}
+				// Clear route options after use
+				frappe.route_options = null;
+			}
 		}
 	},
 
@@ -65,14 +78,23 @@ frappe.ui.form.on("Payment Entry", {
 			};
 		});
 
-		frm.set_query("party_type", function () {
-			frm.events.validate_company(frm);
-			return {
-				filters: {
-					name: ["in", Object.keys(frappe.boot.party_account_types)],
-				},
-			};
-		});
+	frm.set_query("company", function() {
+		const company_doc = frappe.get_doc("Company", frm.doc.company);
+		return {
+			filters: {
+				parent_company: company_doc.parent_company || company_doc.name
+			}
+		};
+	});
+
+	frm.set_query("party_type", function () {
+		frm.events.validate_company(frm);
+		return {
+			filters: {
+				name: ["in", Object.keys(frappe.boot.party_account_types)],
+			},
+		};
+	});
 
 		frm.set_query("party_bank_account", function () {
 			return {
@@ -430,6 +452,18 @@ frappe.ui.form.on("Payment Entry", {
 					frm.set_value(field, null);
 				}
 			);
+			
+			// Validate accounts belong to company
+			if (frm.doc.paid_from && frm.doc.paid_to) {
+				frappe.db.get_value('Account', frm.doc.paid_from, 'company', (r) => {
+					let paid_from_company = r.message.company;
+					frappe.db.get_value('Account', frm.doc.paid_to, 'company', (r) => {
+						if (paid_from_company !== frm.doc.company || r.message.company !== frm.doc.company) {
+							frappe.throw(__("Both accounts must belong to the selected company"));
+						}
+					});
+				});
+			}
 		} else {
 			if (frm.doc.party) {
 				frm.events.party(frm);

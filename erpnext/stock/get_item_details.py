@@ -647,8 +647,15 @@ def get_item_tax_info(doc, tax_category, item_codes, item_rates=None, item_tax_t
 	item_tax_templates = parse_json(item_tax_templates)
 
 	for item_code in item_codes:
-		if not item_code or item_code[1] in out or not item_tax_templates.get(item_code[1]):
+		if not item_code or item_code[1] in out:
 			continue
+
+		# Validate required parameters
+		if not item_tax_templates.get(item_code[1]):
+			frappe.throw(_("Item Tax Template missing for item {0}").format(item_code[0]))
+
+		if not doc.company:
+			frappe.throw(_("Company is required for tax calculations"))
 
 		out[item_code[1]] = ItemDetails()
 		item = frappe.get_cached_doc("Item", item_code[0])
@@ -656,12 +663,18 @@ def get_item_tax_info(doc, tax_category, item_codes, item_rates=None, item_tax_t
 			"company": doc.company,
 			"tax_category": tax_category,
 			"base_net_rate": item_rates.get(item_code[1]),
+			"item_tax_template": item_tax_templates.get(item_code[1])
 		}
 
-		if item_tax_templates:
-			ctx.update({"item_tax_template": item_tax_templates.get(item_code[1])})
+		# Validate tax template exists
+		if not frappe.db.exists("Item Tax Template", ctx["item_tax_template"]):
+			frappe.throw(_("Item Tax Template {0} does not exist").format(ctx["item_tax_template"]))
 
 		get_item_tax_template(ctx, item, out[item_code[1]])
+		
+		if not out[item_code[1]].get("item_tax_template"):
+			frappe.throw(_("No valid Item Tax Template found for {0}").format(item_code[0]))
+
 		out[item_code[1]]["item_tax_rate"] = get_item_tax_map(
 			doc=doc,
 			tax_template=out[item_code[1]].get("item_tax_template"),
